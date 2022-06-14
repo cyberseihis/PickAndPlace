@@ -30,7 +30,7 @@ robot.set_positions(
 
 # Control base - we make the base fully controllable
 robot.set_actuator_type("servo", "rootJoint", False, True, False)
-robot.set_commands([0.3, 0., 0.],
+robot.set_commands([0., 0., 0.],
                    ['rootJoint_rot_z', 'rootJoint_pos_x', 'rootJoint_pos_y'])
 
 # Create position grid for the box/basket
@@ -94,7 +94,7 @@ def bpose():
 def delta_rot():
     vec = bpose() - rpose()
     radt = np.arctan2(vec[0], vec[1])
-    return -radt + (np.pi / 2)
+    return -radt + (np.pi/2)
 
 
 def angdif(x, y):
@@ -112,35 +112,19 @@ def angle_err():
 
 
 def stop_rot():
-    robot.set_commands([0., 0.1, 0.],
-                       ['rootJoint_rot_z',
-                        'rootJoint_pos_x',
-                        'rootJoint_pos_y'])
-
-
-def stop_walk():
     robot.set_commands([0., 0., 0.],
                        ['rootJoint_rot_z',
                         'rootJoint_pos_x',
                         'rootJoint_pos_y'])
 
 
-state = 0
+def setRrobot(in_z):
+    rbp = robot.base_pose()
+    rbp.set_rotation(dp.math.eulerXYZToMatrix([0, 0, in_z]))
+    robot.set_base_pose(rbp)
 
 
-def fsm():
-    global state
-    if state == 0:
-        an_e = angle_err()
-        if np.abs(an_e) < 0.1:
-            state = 1
-            stop_rot()
-    if state == 1:
-        dist_r_b = bpose() - rpose()
-        dist_r_b_plane = dist_r_b[:1]
-        if np.linalg.norm(dist_r_b_plane) < 0.4:
-            state = 2
-            stop_walk()
+setRrobot(delta_rot())
 
 
 for step in range(total_steps):
@@ -148,7 +132,11 @@ for step in range(total_steps):
         # Do something
         box_translation = box.base_pose().translation()
         basket_translation = basket.base_pose().translation()
-        fsm()
+        an_e = angle_err()
+        if np.abs(an_e) < 0.01:
+            stop_rot()
+        else:
+            print(f"{an_e:.4f}")
         if box_into_basket(
              box_translation, basket_translation, basket_z_angle):
             finish_counter += 1
