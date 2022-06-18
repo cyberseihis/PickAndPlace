@@ -63,6 +63,7 @@ basket_pose = [
 basket.set_positions(basket_pose)
 basket.fix_to_world()
 
+
 # Create Graphics
 gconfig = rd.gui.Graphics.default_configuration()
 gconfig.width = 1280
@@ -93,8 +94,26 @@ def bpose():
     return box.base_pose().translation()
 
 
-def delta_rot():
-    vec = bpose() - rpose()
+def arm_pose():
+    arm_tf = robot.body_pose(end_ef)
+    return arm_tf.translation()
+
+
+def dist_to_box():
+    return np.linalg.norm(bpose() - arm_pose())
+
+
+def dist_to_basket():
+    return np.linalg.norm(above_basket(0.4).translation() - arm_pose())
+
+
+def horiz_to_basket():
+    return np.linalg.norm(above_basket(0).translation()[:1] - arm_pose()[:1])
+
+
+def delta_rot(target):
+    t_pose = target.translation()
+    vec = t_pose - rpose()
     radt = np.arctan2(vec[0], vec[1])
     return -radt + (np.pi / 2)
 
@@ -105,12 +124,12 @@ def angdif(x, y):
     return np.arctan2(sd, cd)
 
 
-def angle_err():
-    dero = delta_rot()
+def angle_err(target):
+    dero = delta_rot(target)
     rbr = robot.base_pose().rotation()
     ebrz = dp.math.matrixToEulerXYZ(rbr)[2]
     difz = angdif(dero, ebrz)
-    return difz
+    return np.abs(difz)
 
 
 def stop_rot():
@@ -147,26 +166,54 @@ mask_cmd = np.concatenate([np.zeros(2), np.ones(3),
 mask_rot = np.zeros(28)
 mask_rot[2] = 1
 
+grip_names = ['gripper_finger_joint']
+open_palm = [1]
+iron_fist = [-100]
+
+
+def death_grips():
+    cond = dist_to_box() >= 0.026
+    grip_cmd = open_palm if cond else iron_fist
+    robot.set_commands(grip_cmd, grip_names)
+
+
+def above_basket(basket_target_height):
+    bas_pose = basket.base_pose()
+    basket_up = bas_pose.translation() + [0, 0, basket_target_height]
+    bas_pose.set_translation(basket_up)
+    return bas_pose
+
+
+def height_basket():
+    return 0.4 if horiz_to_basket() > 0.05 else 0
+
+
+def choose_target():
+    box_tf = box.base_pose()
+    tar = box_tf if dist_to_box() >= 0.026 else above_basket(height_basket())
+    return tar
+
 
 def move_arm(target):
     arm_tf = robot.body_pose(end_ef)
     hand_rot = arm_tf.rotation()
     target.set_rotation(hand_rot)
     vel = P_vel(arm_tf, target, 1.)
-    print(f"vel:{vel}")
-    my_mask = mask_rot if angle_err() > np.pi / 2 else mask_cmd
+    print(dist_to_box())
+    my_mask = mask_rot if angle_err(target) > np.pi / 10 else mask_cmd
     jac = robot.jacobian(end_ef)  # this is in world frame
     alpha = 2.
     cmd = alpha * (jac.T @ vel)  # using jacobian transpose
     cmd_arm = cmd * my_mask
     cmd_norm = cmd_arm / np.linalg.norm(cmd_arm, 1)
     robot.set_commands(cmd_norm)
+    death_grips()
 
 
 def fsm():
     global state
     if state == 0:
-        an_e = angle_err()
+        an_e = angle_err(box.base_pose())
         if np.abs(an_e) < 0.1:
             state = 1
             stop_rot()
@@ -176,8 +223,7 @@ def fsm():
             state = 2
             stop_walk()
     if state == 2:
-        box_tf = box.base_pose()
-        move_arm(box_tf)
+        move_arm(choose_target())
 
 
 for step in range(total_steps):
