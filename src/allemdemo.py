@@ -171,8 +171,13 @@ open_palm = [1]
 iron_fist = [-1]
 
 
+def grab_distance():
+    d = 0.025 if bpose()[2] <= 0.08 else 0.05
+    return d
+
+
 def death_grips():
-    cond = dist_to_box() >= 0.03
+    cond = dist_to_box() >= grab_distance()
     grip_cmd = open_palm if cond else iron_fist
     robot.set_commands(grip_cmd, grip_names)
 
@@ -190,7 +195,9 @@ def height_basket():
 
 def choose_target():
     box_tf = box.base_pose()
-    tar = box_tf if dist_to_box() >= 0.03 else above_basket(height_basket())
+    tar = box_tf \
+        if dist_to_box() >= grab_distance() \
+        else above_basket(height_basket())
     return tar
 
 
