@@ -132,23 +132,6 @@ def angle_err(target):
     return np.abs(difz)
 
 
-def stop_rot():
-    robot.set_commands([0., 1.0, 0.],
-                       ['rootJoint_rot_z',
-                        'rootJoint_pos_x',
-                        'rootJoint_pos_y'])
-
-
-def stop_walk():
-    robot.set_commands([0., 0., 0.],
-                       ['rootJoint_rot_z',
-                        'rootJoint_pos_x',
-                        'rootJoint_pos_y'])
-
-
-state = 2
-
-
 def error_task(source, target):
     return rd.math.logMap(source.inverse().multiply(target))
 
@@ -217,29 +200,12 @@ def move_arm(target):
     death_grips()
 
 
-def fsm():
-    global state
-    if state == 0:
-        an_e = angle_err(box.base_pose())
-        if np.abs(an_e) < 0.1:
-            state = 1
-            stop_rot()
-    if state == 1:
-        dist_r_b = bpose() - rpose()
-        if np.linalg.norm(dist_r_b) < 0.4:
-            state = 2
-            stop_walk()
-    if state == 2:
-        move_arm(choose_target())
-
-
 for step in range(total_steps):
     if (simu.schedule(simu.control_freq())):
         # Do something
+        move_arm(choose_target())
         box_translation = box.base_pose().translation()
         basket_translation = basket.base_pose().translation()
-        fsm()
-        arm_tf = robot.body_pose(end_ef)
         if box_into_basket(
              box_translation, basket_translation, basket_z_angle):
             finish_counter += 1
