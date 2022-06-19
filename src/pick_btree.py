@@ -4,6 +4,8 @@ import RobotDART as rd
 
 from utils import create_grid, box_into_basket
 from lab_utils import AdT
+from enum import Enum
+from functools import partial
 
 dt = 0.001
 simulation_time = 200.0
@@ -82,6 +84,11 @@ simu.add_robot(box)
 simu.add_robot(basket)
 
 finish_counter = 0
+
+
+class bt_condition(Enum):
+    Success = True
+    Failure = False
 
 
 def rpose():
@@ -176,7 +183,7 @@ def height_basket():
 
 
 def box_above_basket():
-    return horiz_to_basket() < 0.05
+    return bt_condition(horiz_to_basket() < 0.05)
 
 
 def choose_target():
@@ -187,19 +194,41 @@ def choose_target():
     return tar
 
 
-def cube_out_of_grasp() -> bool:
-    cond = dist_to_box() >= grab_distance()
-    return cond
+def cube_in_grasp() -> bool:
+    cond = dist_to_box() <= grab_distance()
+    return bt_condition(cond)
 
 
 def tree_draft():
-    if cube_out_of_grasp():
+    if not cube_in_grasp():
         pick_cube()
     else:
         if box_above_basket():
             place_basket()
         else:
             place_above_basket()
+
+
+def Behavior_Tree():
+    h = partial(Fallback, [cube_in_grasp, pick_cube])
+    jjj = partial(Fallback, [box_above_basket, place_above_basket])
+    andre = partial(Sequence, [jjj, place_basket])
+    mgm = partial(Sequence, [h, andre])
+    mgm()
+
+
+def Sequence(behaviors: list):
+    for b in behaviors:
+        if b() != bt_condition.Success:
+            return bt_condition.Failure
+    return bt_condition.Success
+
+
+def Fallback(behaviors: list):
+    for b in behaviors:
+        if b() == bt_condition.Success:
+            return bt_condition.Success
+    return bt_condition.Failure
 
 
 def pick_cube():
@@ -235,7 +264,8 @@ for step in range(total_steps):
     if (simu.schedule(simu.control_freq())):
         # Do something
         # task_controller(choose_target())
-        tree_draft()
+        # tree_draft()
+        Behavior_Tree()
         box_translation = box.base_pose().translation()
         basket_translation = basket.base_pose().translation()
         if box_into_basket(
