@@ -158,7 +158,7 @@ mask_rot[2] = 1
 
 grip_names = ['gripper_finger_joint']
 open_palm = [1]
-iron_fist = [-1]
+iron_fist = [-100]
 
 
 def grab_distance():
@@ -178,20 +178,8 @@ def above_basket(basket_target_height):
     return bas_pose
 
 
-def height_basket():
-    return 0.4 if horiz_to_basket() > 0.05 else 0
-
-
 def box_above_basket():
     return bt_condition(horiz_to_basket() < 0.05)
-
-
-def choose_target():
-    box_tf = box.base_pose()
-    tar = box_tf \
-        if dist_to_box() >= grab_distance() \
-        else above_basket(height_basket())
-    return tar
 
 
 def cube_in_grasp() -> bool:
@@ -199,22 +187,12 @@ def cube_in_grasp() -> bool:
     return bt_condition(cond)
 
 
-def tree_draft():
-    if not cube_in_grasp():
-        pick_cube()
-    else:
-        if box_above_basket():
-            place_basket()
-        else:
-            place_above_basket()
-
-
 def Behavior_Tree():
-    h = partial(Fallback, [cube_in_grasp, pick_cube])
-    jjj = partial(Fallback, [box_above_basket, place_above_basket])
-    andre = partial(Sequence, [jjj, place_basket])
-    mgm = partial(Sequence, [h, andre])
-    mgm()
+    node_1 = partial(Fallback, [cube_in_grasp, pick_cube])
+    node_2 = partial(Fallback, [box_above_basket, place_above_basket])
+    node_3 = partial(Sequence, [node_2, place_basket])
+    node_root = partial(Sequence, [node_1, node_3])
+    node_root()
 
 
 def Sequence(behaviors: list):
