@@ -4,6 +4,8 @@ import RobotDART as rd
 
 from utils import create_grid, box_into_basket
 from lab_utils import AdT
+from enum import Enum
+from functools import partial
 
 dt = 0.001
 simulation_time = 200.0
@@ -84,6 +86,11 @@ simu.add_robot(basket)
 finish_counter = 0
 
 
+class bt_condition(Enum):
+    Success = True
+    Failure = False
+
+
 def rpose():
     rbp = robot.base_pose()
     rbt = rbp.translation()
@@ -151,7 +158,7 @@ mask_rot[2] = 1
 
 grip_names = ['gripper_finger_joint']
 open_palm = [1]
-iron_fist = [-1]
+iron_fist = [-100]
 
 
 def grab_distance():
@@ -159,9 +166,8 @@ def grab_distance():
     return d
 
 
-def death_grips():
-    cond = dist_to_box() >= grab_distance()
-    grip_cmd = open_palm if cond else iron_fist
+def death_grips(grab_cond: bool):
+    grip_cmd = open_palm if grab_cond else iron_fist
     robot.set_commands(grip_cmd, grip_names)
 
 
@@ -172,19 +178,51 @@ def above_basket(basket_target_height):
     return bas_pose
 
 
-def height_basket():
-    return 0.4 if horiz_to_basket() > 0.05 else 0
+def box_above_basket():
+    return bt_condition(horiz_to_basket() < 0.05)
 
 
-def choose_target():
+def cube_in_grasp() -> bool:
+    cond = dist_to_box() <= grab_distance()
+    return bt_condition(cond)
+
+
+def Behavior_Tree():
+    node_1 = partial(Fallback, [cube_in_grasp, pick_cube])
+    node_2 = partial(Fallback, [box_above_basket, place_above_basket])
+    node_3 = partial(Sequence, [node_2, place_basket])
+    node_root = partial(Sequence, [node_1, node_3])
+    node_root()
+
+
+def Sequence(behaviors: list):
+    for b in behaviors:
+        if b() != bt_condition.Success:
+            return bt_condition.Failure
+    return bt_condition.Success
+
+
+def Fallback(behaviors: list):
+    for b in behaviors:
+        if b() == bt_condition.Success:
+            return bt_condition.Success
+    return bt_condition.Failure
+
+
+def pick_cube():
     box_tf = box.base_pose()
-    tar = box_tf \
-        if dist_to_box() >= grab_distance() \
-        else above_basket(height_basket())
-    return tar
+    task_controller(box_tf, True)
 
 
-def move_arm(target):
+def place_above_basket():
+    task_controller(above_basket(0.4), False)
+
+
+def place_basket():
+    task_controller(above_basket(0.), False)
+
+
+def task_controller(target, grab_cond):
     arm_tf = robot.body_pose(end_ef)
     hand_rot = arm_tf.rotation()
     target.set_rotation(hand_rot)
@@ -197,13 +235,15 @@ def move_arm(target):
     cmd_arm = cmd * my_mask
     cmd_norm = cmd_arm / np.linalg.norm(cmd_arm, 1)
     robot.set_commands(cmd_norm)
-    death_grips()
+    death_grips(grab_cond)
 
 
 for step in range(total_steps):
     if (simu.schedule(simu.control_freq())):
         # Do something
-        move_arm(choose_target())
+        # task_controller(choose_target())
+        # tree_draft()
+        Behavior_Tree()
         box_translation = box.base_pose().translation()
         basket_translation = basket.base_pose().translation()
         if box_into_basket(
